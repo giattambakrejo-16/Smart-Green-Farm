@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/Header";
+import Overview from "@/components/Overview";
 import RaisedBed from "@/components/RaisedBed";
 import Aquaponik from "@/components/Aquaponik";
 import HistoryPage from "@/components/History";
@@ -9,11 +10,10 @@ import BottomNav from "@/components/BottomNav";
 import { historyData, initialAqua, initialRaised } from "@/data/dummy";
 import { useAlert } from "@/hooks/useAlert";
 import type { DateRange, TabType } from "@/types/sensor";
-import Overview from "@/components/Overview";
 
 export default function Home() {
   const [tab, setTab] = useState<TabType>("dashboard");
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
   const [showAlert, setShowAlert] = useState(false);
 
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -64,7 +64,7 @@ export default function Home() {
         dark ? "bg-[#07111f] text-white" : "bg-[#f4f7fb] text-slate-950"
       }`}
     >
-      <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-md px-4 py-5 sm:max-w-3xl lg:max-w-6xl">
         <Header
           dark={dark}
           setDark={setDark}
@@ -72,7 +72,7 @@ export default function Home() {
           showAlert={showAlert}
           setShowAlert={setShowAlert}
         />
-        
+
         {tab === "dashboard" && (
           <Overview dark={dark} raised={raised} aqua={aqua} alerts={alerts} />
         )}
@@ -94,15 +94,11 @@ export default function Home() {
           />
         )}
 
-        <footer
-          className={`mt-8 rounded-[26px] p-6 text-center ring-1 ${
-            dark ? "bg-[#111827] ring-white/10" : "bg-white ring-slate-200"
-          }`}
-        >
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+        <footer className="mt-8 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
             Developed by
           </p>
-          <h3 className="mt-2 text-lg font-extrabold text-teal-500">
+          <h3 className="mt-2 text-sm font-extrabold text-teal-500">
             Tim IoT GIAT 16 UNNES
           </h3>
         </footer>

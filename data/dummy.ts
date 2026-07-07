@@ -13,6 +13,7 @@ export const initialRaised: RaisedState = {
   valve2: false,
   valve3: false,
   valve4: false,
+  valve5: false,
 };
 
 export const initialAqua: AquaState = {

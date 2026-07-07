@@ -49,6 +49,7 @@ export default function RaisedBed({ raised, setRaised, dark }: Props) {
             <ControlTile label="Valve 2" active={raised.valve2} icon={<Power size={22} />} onClick={() => setRaised({ ...raised, valve2: !raised.valve2 })} />
             <ControlTile label="Valve 3" active={raised.valve3} icon={<Power size={22} />} onClick={() => setRaised({ ...raised, valve3: !raised.valve3 })} />
             <ControlTile label="Valve 4" active={raised.valve4} icon={<Power size={22} />} onClick={() => setRaised({ ...raised, valve4: !raised.valve4 })} />
+            <ControlTile label="Valve 5" active={raised.valve5} icon={<Power size={22} />} onClick={() => setRaised({ ...raised, valve5: !raised.valve5 })} />
           </ManualControl>
         </div>
       </div>

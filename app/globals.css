@@ -4,6 +4,41 @@
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
+  background: #f5f7fb;
+}
+
+button,
+input {
+  font-family: inherit;
+}
+
+::selection {
+  background: #14b8a6;
+  color: white;
+}
+
+.card-soft {
+  border-radius: 28px;
+  background: white;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+}
+
+.card-dark {
+  border-radius: 28px;
+  background: #111827;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
+}
+
+.soft-hover {
+  transition: all 0.25s ease;
+}
+
+.soft-hover:hover {
+  transform: translateY(-3px);
 }
