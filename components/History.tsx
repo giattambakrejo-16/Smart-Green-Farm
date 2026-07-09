@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { History } from "lucide-react";
 import {
   Area,
@@ -18,7 +19,14 @@ type Props = {
   setDateRange: (value: DateRange) => void;
 };
 
-export default function HistoryPage({ dark, data, dateRange, setDateRange }: Props) {
+export default function HistoryPage({
+  dark,
+  data,
+  dateRange,
+  setDateRange,
+}: Props) {
+  const [selectedRange, setSelectedRange] = useState(7);
+
   const raisedAvg =
     data.length > 0
       ? Math.round(data.reduce((sum, item) => sum + item.raised, 0) / data.length)
@@ -29,11 +37,26 @@ export default function HistoryPage({ dark, data, dateRange, setDateRange }: Pro
       ? Math.round(data.reduce((sum, item) => sum + item.aqua, 0) / data.length)
       : 0;
 
+  const setQuickRange = (days: number) => {
+    setSelectedRange(days);
+
+    const end = new Date();
+    const start = new Date();
+
+    start.setDate(end.getDate() - (days - 1));
+
+    const formatDate = (date: Date) => date.toISOString().split("T")[0];
+
+    setDateRange({
+      start: formatDate(start),
+      end: formatDate(end),
+    });
+  };
+
   return (
     <section
-      className={`rounded-[30px] p-4 shadow-sm ring-1 sm:p-6 ${
-        dark ? "bg-[#111827] ring-white/10" : "bg-white ring-slate-200"
-      }`}
+      className={`rounded-[30px] p-4 shadow-sm ring-1 sm:p-6 ${dark ? "bg-[#111827] ring-white/10" : "bg-white ring-slate-200"
+        }`}
     >
       <div className="mb-6 flex items-start gap-4">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500/15 to-emerald-500/15 text-teal-400">
@@ -43,36 +66,69 @@ export default function HistoryPage({ dark, data, dateRange, setDateRange }: Pro
         <div className="min-w-0">
           <h2 className="text-xl font-black leading-tight">Riwayat Monitoring</h2>
           <p className={dark ? "mt-1 text-sm text-slate-400" : "mt-1 text-sm text-slate-500"}>
-            Pilih tanggal awal dan akhir untuk melihat rekap data.
+            Pilih rentang hari atau tanggal khusus.
           </p>
         </div>
       </div>
 
       <div
-        className={`mb-5 grid gap-3 rounded-[24px] p-4 ring-1 sm:grid-cols-[1fr_1fr_auto] ${
-          dark ? "bg-white/5 ring-white/10" : "bg-[#f8fafc] ring-slate-100"
-        }`}
+        className={`mb-4 rounded-[22px] p-1 ${dark ? "bg-white/5" : "bg-slate-100"
+          }`}
+      >
+        <div className="grid grid-cols-4 gap-1">
+          {[1, 3, 7, 14].map((day) => {
+            const active = selectedRange === day;
+
+            return (
+              <button
+                key={day}
+                onClick={() => setQuickRange(day)}
+                className={`rounded-2xl py-2.5 text-sm font-bold transition-all duration-300 ${active
+                    ? "bg-teal-500 text-white shadow-lg shadow-teal-500/30"
+                    : dark
+                      ? "text-slate-400 hover:bg-white/5 hover:text-white"
+                      : "text-slate-600 hover:bg-white"
+                  }`}
+              >
+                {day} Hari
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div
+        className={`mb-5 grid gap-3 rounded-[24px] p-4 ring-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]sm:grid-cols-[1fr_1fr_auto] ${dark ? "bg-white/5 ring-white/10" : "bg-[#f8fafc] ring-slate-100"
+          }`}
       >
         <DateInput
           dark={dark}
           label="Tanggal Awal"
           value={dateRange.start}
-          onChange={(value) => setDateRange({ ...dateRange, start: value })}
+          onChange={(value) => {
+            setSelectedRange(0);
+            setDateRange({ ...dateRange, start: value });
+          }}
         />
+
         <DateInput
           dark={dark}
           label="Tanggal Akhir"
           value={dateRange.end}
-          onChange={(value) => setDateRange({ ...dateRange, end: value })}
+          onChange={(value) => {
+            setSelectedRange(0);
+            setDateRange({ ...dateRange, end: value });
+          }}
         />
+
         <button className="rounded-2xl bg-teal-500 px-5 py-3 text-sm font-extrabold text-white">
           Terapkan
         </button>
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3">
-        <HistorySummary dark={dark} title="Rata-rata Raised Bed" value={`${raisedAvg}%`} />
-        <HistorySummary dark={dark} title="Rata-rata Aquaponik" value={`${aquaAvg}%`} />
+        <HistorySummary dark={dark} title="Raised Bed" value={`${raisedAvg}%`} />
+        <HistorySummary dark={dark} title="Aquaponik" value={`${aquaAvg}%`} />
       </div>
 
       <HistoryGroup title="Raised Bed">
@@ -107,27 +163,43 @@ function DateInput({
   onChange: (value: string) => void;
 }) {
   return (
-    <label>
-      <p className={dark ? "mb-2 text-xs font-bold text-slate-400" : "mb-2 text-xs font-bold text-slate-500"}>
+    <label className="block min-w-0">
+      <p
+        className={
+          dark
+            ? "mb-2 text-xs font-bold text-slate-400"
+            : "mb-2 text-xs font-bold text-slate-500"
+        }
+      >
         {label}
       </p>
+
       <input
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-2xl px-4 py-3 text-sm font-bold outline-none ring-1 ${
-          dark ? "bg-[#0b1220] text-white ring-white/10" : "bg-white text-slate-950 ring-slate-200"
-        }`}
+        className={`min-h-12 w-full min-w-0 rounded-2xl px-4 py-3 text-sm font-black outline-none ring-1 ${dark
+            ? "bg-[#0b1220] text-white ring-white/10"
+            : "bg-white text-slate-950 ring-slate-200"
+          }`}
       />
     </label>
   );
 }
 
-function HistorySummary({ dark, title, value }: { dark: boolean; title: string; value: string }) {
+function HistorySummary({
+  dark,
+  title,
+  value,
+}: {
+  dark: boolean;
+  title: string;
+  value: string;
+}) {
   return (
     <div className={`rounded-[24px] p-5 ${dark ? "bg-white/[0.06]" : "bg-white shadow-sm"}`}>
       <p className={`text-xs font-semibold ${dark ? "text-slate-400" : "text-slate-500"}`}>
-        {title.replace("Rata-rata ", "")}
+        {title}
       </p>
 
       <h3 className="mt-3 text-4xl font-black leading-none text-teal-400">
@@ -141,7 +213,13 @@ function HistorySummary({ dark, title, value }: { dark: boolean; title: string; 
   );
 }
 
-function HistoryGroup({ title, children }: { title: string; children: React.ReactNode }) {
+function HistoryGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="mb-5">
       <h3 className="mb-3 text-lg font-extrabold">{title}</h3>
@@ -165,9 +243,8 @@ function LineChartCard({
 }) {
   return (
     <div
-      className={`rounded-[26px] p-4 ring-1 ${
-        dark ? "bg-white/5 ring-white/10" : "bg-[#f8fafc] ring-slate-100"
-      }`}
+      className={`rounded-[26px] p-4 ring-1 ${dark ? "bg-white/5 ring-white/10" : "bg-[#f8fafc] ring-slate-100"
+        }`}
     >
       <h4 className="mb-4 font-extrabold">{title}</h4>
 

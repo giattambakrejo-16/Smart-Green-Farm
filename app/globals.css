@@ -42,3 +42,13 @@ input {
 .soft-hover:hover {
   transform: translateY(-3px);
 }
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  display: none;
+}
+
+input[type="date"] {
+  appearance: none;
+  -webkit-appearance: none;
+}
