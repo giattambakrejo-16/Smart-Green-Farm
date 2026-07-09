@@ -18,7 +18,7 @@ export type RaisedState = {
   valve2: boolean;
   valve3: boolean;
   valve4: boolean;
-  velve5: boolean;
+  valve5: boolean;
 };
 
 export type AquaState = {

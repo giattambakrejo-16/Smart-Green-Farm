@@ -20,8 +20,8 @@ export default function Aquaponik({ aqua, setAqua, dark }: Props) {
         >
             <div className="mb-5 flex items-start justify-between gap-3">
                 <div className="flex gap-3">
-                    <div className="grid h-12 w-12 place-items-center rounded-2xl bg-teal-500/15 text-teal-500">
-                        <Fish size={24} />
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-400">
+                        <Fish size={24} strokeWidth={2.2} />
                     </div>
                     <div>
                         <h2 className="text-xl font-extrabold">Aquaponik</h2>
@@ -51,11 +51,12 @@ export default function Aquaponik({ aqua, setAqua, dark }: Props) {
                 <ProgressCard dark={dark} label="Sensor Pakan" value={aqua.feedLevel} />
 
                 <div className="col-span-2 sm:col-span-3 lg:col-span-4">
-                    <ManualControl title="Manual Control" single>
+                    <ManualControl title="Manual Feed Control" single dark={dark}>
                         <ControlTile
                             label="Pakan Otomatis"
                             active={aqua.autoFeed}
                             icon={<Fish size={22} />}
+                            dark={dark}
                             onClick={() => setAqua({ ...aqua, autoFeed: !aqua.autoFeed })}
                         />
                     </ManualControl>
