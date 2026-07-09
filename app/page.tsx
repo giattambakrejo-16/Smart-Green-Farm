@@ -209,6 +209,21 @@ export default function Home() {
 
   const alerts = useAlert(raised, aqua);
 
+  // Register Service Worker (PWA)
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      "serviceWorker" in navigator
+    ) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then(() => console.log("✅ Service Worker Registered"))
+        .catch((err) =>
+          console.error("❌ Service Worker Error:", err)
+        );
+    }
+  }, []);
+
   // Initialize and subscribe to real-time sensor updates
   useEffect(() => {
     async function fetchInitialData() {
