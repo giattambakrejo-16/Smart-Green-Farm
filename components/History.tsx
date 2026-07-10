@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { History } from "lucide-react";
+import { Check, ChevronDown, History } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -19,33 +19,50 @@ type Props = {
   setDateRange: (value: DateRange) => void;
 };
 
+const RANGE_OPTIONS = [
+  { label: "1 Hari", value: "1" },
+  { label: "2 Hari", value: "2" },
+  { label: "3 Hari", value: "3" },
+  { label: "7 Hari", value: "7" },
+  { label: "14 Hari", value: "14" },
+  { label: "1 Bulan", value: "30" },
+  { label: "2 Bulan", value: "60" },
+  { label: "3 Bulan", value: "90" },
+];
+
 export default function HistoryPage({
   dark,
   data,
   dateRange,
   setDateRange,
 }: Props) {
-  const [selectedRange, setSelectedRange] = useState(7);
+  const [selectedRange, setSelectedRange] = useState("7");
+  const [rangeOpen, setRangeOpen] = useState(false);
 
   const raisedAvg =
     data.length > 0
-      ? Math.round(data.reduce((sum, item) => sum + item.raised, 0) / data.length)
+      ? Math.round(
+        data.reduce((sum, item) => sum + item.raised, 0) / data.length
+      )
       : 0;
 
   const aquaAvg =
     data.length > 0
-      ? Math.round(data.reduce((sum, item) => sum + item.aqua, 0) / data.length)
+      ? Math.round(
+        data.reduce((sum, item) => sum + item.aqua, 0) / data.length
+      )
       : 0;
 
-  const setQuickRange = (days: number) => {
-    setSelectedRange(days);
+  const formatDate = (date: Date) => date.toISOString().split("T")[0];
 
+  const setQuickRange = (value: string) => {
+    setSelectedRange(value);
+
+    const days = Number(value);
     const end = new Date();
     const start = new Date();
 
     start.setDate(end.getDate() - (days - 1));
-
-    const formatDate = (date: Date) => date.toISOString().split("T")[0];
 
     setDateRange({
       start: formatDate(start),
@@ -55,7 +72,9 @@ export default function HistoryPage({
 
   return (
     <section
-      className={`rounded-[30px] p-4 shadow-sm ring-1 sm:p-6 ${dark ? "bg-[#111827] ring-white/10" : "bg-white ring-slate-200"
+      className={`rounded-[30px] p-4 shadow-sm ring-1 sm:p-6 ${dark
+          ? "bg-[#111827] ring-white/10"
+          : "bg-white ring-slate-200"
         }`}
     >
       <div className="mb-6 flex items-start gap-4">
@@ -64,41 +83,92 @@ export default function HistoryPage({
         </div>
 
         <div className="min-w-0">
-          <h2 className="text-xl font-black leading-tight">Riwayat Monitoring</h2>
-          <p className={dark ? "mt-1 text-sm text-slate-400" : "mt-1 text-sm text-slate-500"}>
-            Pilih rentang hari atau tanggal khusus.
+          <h2 className="text-xl font-black leading-tight">
+            Riwayat Monitoring
+          </h2>
+
+          <p
+            className={
+              dark
+                ? "mt-1 text-sm text-slate-400"
+                : "mt-1 text-sm text-slate-500"
+            }
+          >
+            Pilih rentang waktu atau tanggal khusus.
           </p>
         </div>
       </div>
 
-      <div
-        className={`mb-4 rounded-[22px] p-1 ${dark ? "bg-white/5" : "bg-slate-100"
-          }`}
-      >
-        <div className="grid grid-cols-4 gap-1">
-          {[1, 3, 7, 14].map((day) => {
-            const active = selectedRange === day;
+      <div className="relative z-30 mb-4">
+        <p
+          className={`mb-2 text-xs font-bold ${dark ? "text-slate-400" : "text-slate-500"
+            }`}
+        >
+          Pilih Rentang
+        </p>
 
-            return (
-              <button
-                key={day}
-                onClick={() => setQuickRange(day)}
-                className={`rounded-2xl py-2.5 text-sm font-bold transition-all duration-300 ${active
-                    ? "bg-teal-500 text-white shadow-lg shadow-teal-500/30"
-                    : dark
-                      ? "text-slate-400 hover:bg-white/5 hover:text-white"
-                      : "text-slate-600 hover:bg-white"
-                  }`}
-              >
-                {day} Hari
-              </button>
-            );
-          })}
-        </div>
+        <button
+          type="button"
+          onClick={() => setRangeOpen((prev) => !prev)}
+          className={`flex min-h-12 w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-black ring-1 transition ${dark
+              ? "bg-[#0b1220] text-white ring-white/10 hover:bg-[#101a2c]"
+              : "bg-white text-slate-950 ring-slate-200 hover:bg-slate-50"
+            }`}
+        >
+          <span>
+            {RANGE_OPTIONS.find(
+              (option) => option.value === selectedRange
+            )?.label ?? "Pilih rentang"}
+          </span>
+
+          <ChevronDown
+            size={18}
+            className={`shrink-0 transition-transform duration-200 ${rangeOpen ? "rotate-180" : ""
+              } ${dark ? "text-slate-400" : "text-slate-500"}`}
+          />
+        </button>
+
+        {rangeOpen && (
+          <div
+            className={`absolute left-0 right-0 top-[74px] z-50 overflow-hidden rounded-[20px] p-2 shadow-2xl ring-1 ${dark
+                ? "bg-[#0b1220] ring-white/10"
+                : "bg-white ring-slate-200"
+              }`}
+          >
+            <div className="max-h-64 space-y-1 overflow-y-auto">
+              {RANGE_OPTIONS.map((option) => {
+                const active = selectedRange === option.value;
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setQuickRange(option.value);
+                      setRangeOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${active
+                        ? "bg-teal-500 text-white"
+                        : dark
+                          ? "text-slate-300 hover:bg-white/5"
+                          : "text-slate-700 hover:bg-slate-100"
+                      }`}
+                  >
+                    <span>{option.label}</span>
+
+                    {active && <Check size={17} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div
-        className={`mb-5 grid gap-3 rounded-[24px] p-4 ring-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]sm:grid-cols-[1fr_1fr_auto] ${dark ? "bg-white/5 ring-white/10" : "bg-[#f8fafc] ring-slate-100"
+        className={`mb-5 grid gap-3 rounded-[24px] p-4 ring-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] ${dark
+            ? "bg-white/5 ring-white/10"
+            : "bg-[#f8fafc] ring-slate-100"
           }`}
       >
         <DateInput
@@ -106,8 +176,11 @@ export default function HistoryPage({
           label="Tanggal Awal"
           value={dateRange.start}
           onChange={(value) => {
-            setSelectedRange(0);
-            setDateRange({ ...dateRange, start: value });
+            setSelectedRange("");
+            setDateRange({
+              ...dateRange,
+              start: value,
+            });
           }}
         />
 
@@ -116,36 +189,126 @@ export default function HistoryPage({
           label="Tanggal Akhir"
           value={dateRange.end}
           onChange={(value) => {
-            setSelectedRange(0);
-            setDateRange({ ...dateRange, end: value });
+            setSelectedRange("");
+            setDateRange({
+              ...dateRange,
+              end: value,
+            });
           }}
         />
 
-        <button className="rounded-2xl bg-teal-500 px-5 py-3 text-sm font-extrabold text-white">
+        <button
+          type="button"
+          className="min-h-12 rounded-2xl bg-teal-500 px-5 py-3 text-sm font-extrabold text-white transition hover:bg-teal-600 sm:col-span-2 lg:col-span-1 lg:self-end"
+        >
           Terapkan
         </button>
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3">
-        <HistorySummary dark={dark} title="Raised Bed" value={`${raisedAvg}%`} />
-        <HistorySummary dark={dark} title="Aquaponik" value={`${aquaAvg}%`} />
+        <HistorySummary
+          dark={dark}
+          title="Raised Bed"
+          value={`${raisedAvg}%`}
+        />
+
+        <HistorySummary
+          dark={dark}
+          title="Aquaponik"
+          value={`${aquaAvg}%`}
+        />
       </div>
 
       <HistoryGroup title="Raised Bed">
-        <LineChartCard dark={dark} title="Suhu Udara" data={data} dataKey="temp" color="#f59e0b" />
-        <LineChartCard dark={dark} title="Kelembapan Udara" data={data} dataKey="humidity" color="#06b6d4" />
-        <LineChartCard dark={dark} title="Soil Sensor 1" data={data} dataKey="soil1" color="#14b8a6" />
-        <LineChartCard dark={dark} title="Soil Sensor 2" data={data} dataKey="soil2" color="#22c55e" />
-        <LineChartCard dark={dark} title="Intensitas Cahaya" data={data} dataKey="light" color="#eab308" />
-        <LineChartCard dark={dark} title="Curah Hujan" data={data} dataKey="rain" color="#38bdf8" />
+        <LineChartCard
+          dark={dark}
+          title="Suhu Udara"
+          data={data}
+          dataKey="temp"
+          color="#f59e0b"
+        />
+
+        <LineChartCard
+          dark={dark}
+          title="Kelembapan Udara"
+          data={data}
+          dataKey="humidity"
+          color="#06b6d4"
+        />
+
+        <LineChartCard
+          dark={dark}
+          title="Soil Sensor 1"
+          data={data}
+          dataKey="soil1"
+          color="#14b8a6"
+        />
+
+        <LineChartCard
+          dark={dark}
+          title="Soil Sensor 2"
+          data={data}
+          dataKey="soil2"
+          color="#22c55e"
+        />
+
+        <LineChartCard
+          dark={dark}
+          title="Intensitas Cahaya"
+          data={data}
+          dataKey="light"
+          color="#eab308"
+        />
+
+        <LineChartCard
+          dark={dark}
+          title="Curah Hujan"
+          data={data}
+          dataKey="rain"
+          color="#38bdf8"
+        />
       </HistoryGroup>
 
       <HistoryGroup title="Aquaponik">
-        <LineChartCard dark={dark} title="pH Air" data={data} dataKey="ph" color="#22c55e" />
-        <LineChartCard dark={dark} title="Suhu Air" data={data} dataKey="waterTemp" color="#f97316" />
-        <LineChartCard dark={dark} title="Turbidity / Kekeruhan" data={data} dataKey="turbidity" color="#38bdf8" />
-        <LineChartCard dark={dark} title="Water Level" data={data} dataKey="waterLevel" color="#06b6d4" />
-        <LineChartCard dark={dark} title="Sensor Pakan" data={data} dataKey="feedLevel" color="#a855f7" />
+        <LineChartCard
+          dark={dark}
+          title="pH Air"
+          data={data}
+          dataKey="ph"
+          color="#22c55e"
+        />
+
+        <LineChartCard
+          dark={dark}
+          title="Suhu Air"
+          data={data}
+          dataKey="waterTemp"
+          color="#f97316"
+        />
+
+        <LineChartCard
+          dark={dark}
+          title="Turbidity / Kekeruhan"
+          data={data}
+          dataKey="turbidity"
+          color="#38bdf8"
+        />
+
+        <LineChartCard
+          dark={dark}
+          title="Water Level"
+          data={data}
+          dataKey="waterLevel"
+          color="#06b6d4"
+        />
+
+        <LineChartCard
+          dark={dark}
+          title="Sensor Pakan"
+          data={data}
+          dataKey="feedLevel"
+          color="#a855f7"
+        />
       </HistoryGroup>
     </section>
   );
@@ -177,7 +340,7 @@ function DateInput({
       <input
         type="date"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(event) => onChange(event.target.value)}
         className={`min-h-12 w-full min-w-0 rounded-2xl px-4 py-3 text-sm font-black outline-none ring-1 ${dark
             ? "bg-[#0b1220] text-white ring-white/10"
             : "bg-white text-slate-950 ring-slate-200"
@@ -197,8 +360,14 @@ function HistorySummary({
   value: string;
 }) {
   return (
-    <div className={`rounded-[24px] p-5 ${dark ? "bg-white/[0.06]" : "bg-white shadow-sm"}`}>
-      <p className={`text-xs font-semibold ${dark ? "text-slate-400" : "text-slate-500"}`}>
+    <div
+      className={`rounded-[24px] p-5 ${dark ? "bg-white/[0.06]" : "bg-white shadow-sm"
+        }`}
+    >
+      <p
+        className={`text-xs font-semibold ${dark ? "text-slate-400" : "text-slate-500"
+          }`}
+      >
         {title}
       </p>
 
@@ -206,7 +375,10 @@ function HistorySummary({
         {value}
       </h3>
 
-      <p className={`mt-2 text-xs font-medium ${dark ? "text-slate-500" : "text-slate-400"}`}>
+      <p
+        className={`mt-2 text-xs font-medium ${dark ? "text-slate-500" : "text-slate-400"
+          }`}
+      >
         Rata-rata periode ini
       </p>
     </div>
@@ -243,24 +415,58 @@ function LineChartCard({
 }) {
   return (
     <div
-      className={`rounded-[26px] p-4 ring-1 ${dark ? "bg-white/5 ring-white/10" : "bg-[#f8fafc] ring-slate-100"
+      className={`rounded-[26px] p-4 ring-1 ${dark
+          ? "bg-white/5 ring-white/10"
+          : "bg-[#f8fafc] ring-slate-100"
         }`}
     >
       <h4 className="mb-4 font-extrabold">{title}</h4>
 
       <div className="pointer-events-none outline-none">
         <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={data} style={{ outline: "none", pointerEvents: "none" }}>
+          <AreaChart
+            data={data}
+            style={{
+              outline: "none",
+              pointerEvents: "none",
+            }}
+          >
             <defs>
-              <linearGradient id={`grad-${String(dataKey)}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={color} stopOpacity={0.35} />
-                <stop offset="95%" stopColor={color} stopOpacity={0} />
+              <linearGradient
+                id={`grad-${String(dataKey)}`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="5%"
+                  stopColor={color}
+                  stopOpacity={0.35}
+                />
+
+                <stop
+                  offset="95%"
+                  stopColor={color}
+                  stopOpacity={0}
+                />
               </linearGradient>
             </defs>
 
-            <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-            <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
+            <CartesianGrid
+              strokeDasharray="3 3"
+              opacity={0.15}
+            />
+
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 12 }}
+            />
+
+            <YAxis
+              domain={[0, 100]}
+              tick={{ fontSize: 12 }}
+            />
 
             <Area
               type="monotone"
