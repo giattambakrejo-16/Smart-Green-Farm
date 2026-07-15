@@ -5,7 +5,9 @@ import Header from "@/components/Header";
 import Overview from "@/components/Overview";
 import RaisedBed from "@/components/RaisedBed";
 import Aquaponik from "@/components/Aquaponik";
-import HistoryPage from "@/components/History";
+import HistoryPage, {
+  type HistoryInterval,
+} from "@/components/History";
 import BottomNav from "@/components/BottomNav";
 import { initialAqua, initialRaised } from "@/data/dummy";
 import { useAlert } from "@/hooks/useAlert";
@@ -44,6 +46,46 @@ interface AquaponicsRow {
   avg_feed_storage?: number;
 }
 
+interface ActivityLogRow {
+  id?: string;
+  activity_at?: string;
+  created_at?: string;
+  activity_type?: string;
+  system_type?: string;
+  device_id?: string;
+  zone_id?: string;
+  actor_name?: string;
+  actor_type?: string;
+  title?: string;
+  description?: string;
+  status?: string;
+}
+
+interface ManualControlLogRow {
+  id?: string;
+  requested_at?: string;
+  executed_at?: string;
+  completed_at?: string;
+  created_at?: string;
+
+  system_type?: string;
+  device_id?: string;
+  zone_id?: string;
+
+  actuator_name?: string;
+  command?: string;
+  duration_seconds?: number;
+
+  previous_state?: boolean | string;
+  requested_state?: boolean | string;
+  final_state?: boolean | string;
+
+  command_status?: string;
+  initiated_by?: string;
+  reason?: string;
+  error_message?: string;
+}
+
 function mapTankLevel(level: string | null | undefined): number {
   if (!level) return 0;
   switch (level.toLowerCase()) {
@@ -56,140 +98,540 @@ function mapTankLevel(level: string | null | undefined): number {
   }
 }
 
+function clamp(value: number, min = 0, max = 100): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0;
+
+  return (
+    values.reduce((total, value) => total + value, 0) /
+    values.length
+  );
+}
+
+function validNumber(
+  value: number | null | undefined
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    Number.isNaN(Number(value))
+  ) {
+    return null;
+  }
+
+  return Number(value);
+}
+
+function collectNumbers(
+  values: Array<number | null | undefined>
+): number[] {
+  return values
+    .map(validNumber)
+    .filter(
+      (value): value is number =>
+        value !== null
+    );
+}
+
+function calculateRangeScore(
+  value: number,
+  optimalMin: number,
+  optimalMax: number,
+  absoluteMin: number,
+  absoluteMax: number
+): number {
+  if (value >= optimalMin && value <= optimalMax) {
+    return 100;
+  }
+
+  if (value < optimalMin) {
+    if (value <= absoluteMin) return 0;
+
+    return clamp(
+      ((value - absoluteMin) /
+        (optimalMin - absoluteMin)) *
+      100
+    );
+  }
+
+  if (value >= absoluteMax) return 0;
+
+  return clamp(
+    ((absoluteMax - value) /
+      (absoluteMax - optimalMax)) *
+    100
+  );
+}
+
+function calculateRaisedHealth(
+  temperature: number,
+  humidity: number,
+  soil1: number,
+  soil2: number
+): number {
+  const soilAverage = (soil1 + soil2) / 2;
+
+  const temperatureScore = calculateRangeScore(
+    temperature,
+    24,
+    31,
+    15,
+    42
+  );
+
+  const humidityScore = calculateRangeScore(
+    humidity,
+    60,
+    85,
+    25,
+    100
+  );
+
+  const soilScore = calculateRangeScore(
+    soilAverage,
+    45,
+    75,
+    10,
+    100
+  );
+
+  const soilDifference = Math.abs(soil1 - soil2);
+
+  const consistencyScore =
+    soilDifference <= 10
+      ? 100
+      : clamp(100 - (soilDifference - 10) * 5);
+
+  return Math.round(
+    temperatureScore * 0.25 +
+    humidityScore * 0.2 +
+    soilScore * 0.45 +
+    consistencyScore * 0.1
+  );
+}
+
+function calculateAquaponicsHealth(
+  ph: number,
+  waterTemperature: number,
+  turbidity: number,
+  waterLevel: number,
+  feedLevel: number
+): number {
+  const phScore = calculateRangeScore(
+    ph,
+    6.5,
+    7.5,
+    5,
+    9
+  );
+
+  const temperatureScore = calculateRangeScore(
+    waterTemperature,
+    24,
+    29,
+    18,
+    36
+  );
+
+  const turbidityScore =
+    turbidity <= 20
+      ? 100
+      : clamp(100 - (turbidity - 20) * 2.5);
+
+  const waterLevelScore = calculateRangeScore(
+    waterLevel,
+    70,
+    95,
+    25,
+    100
+  );
+
+  const feedScore =
+    feedLevel >= 25
+      ? 100
+      : clamp((feedLevel / 25) * 100);
+
+  return Math.round(
+    phScore * 0.3 +
+    temperatureScore * 0.2 +
+    turbidityScore * 0.2 +
+    waterLevelScore * 0.2 +
+    feedScore * 0.1
+  );
+}
+
+function createBucketKey(
+  timestamp: string,
+  interval: HistoryInterval
+): string {
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  const jakartaDate = new Date(
+    date.toLocaleString("en-US", {
+      timeZone: "Asia/Jakarta",
+    })
+  );
+
+  if (interval === "30m") {
+    const minutes =
+      Math.floor(jakartaDate.getMinutes() / 30) * 30;
+
+    jakartaDate.setMinutes(minutes, 0, 0);
+  }
+
+  if (interval === "1h") {
+    jakartaDate.setMinutes(0, 0, 0);
+  }
+
+  if (interval === "6h") {
+    const hour =
+      Math.floor(jakartaDate.getHours() / 6) * 6;
+
+    jakartaDate.setHours(hour, 0, 0, 0);
+  }
+
+  if (interval === "1d") {
+    jakartaDate.setHours(0, 0, 0, 0);
+  }
+
+  const year = jakartaDate.getFullYear();
+  const month = String(
+    jakartaDate.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    jakartaDate.getDate()
+  ).padStart(2, "0");
+  const hour = String(
+    jakartaDate.getHours()
+  ).padStart(2, "0");
+  const minute = String(
+    jakartaDate.getMinutes()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hour}:${minute}:00+07:00`;
+}
+
+function formatHistoryLabel(
+  timestamp: string,
+  interval: HistoryInterval
+): string {
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  if (interval === "1d") {
+    return new Intl.DateTimeFormat("id-ID", {
+      day: "2-digit",
+      month: "short",
+      timeZone: "Asia/Jakarta",
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Jakarta",
+  }).format(date);
+}
+
 function aggregateData(
   raisedRows: RaisedBedRow[],
   aquaRows: AquaponicsRow[],
+  interval: HistoryInterval,
   isSummary: boolean
 ): HistoryItem[] {
-  const dates: { [dateStr: string]: { raised: RaisedBedRow[]; aqua: AquaponicsRow[] } } = {};
+  const groups: Record<
+    string,
+    {
+      raised: RaisedBedRow[];
+      aqua: AquaponicsRow[];
+    }
+  > = {};
 
-  const getDateKey = (row: RaisedBedRow | AquaponicsRow) => {
-    const dateVal = isSummary ? row.summary_date : row.created_at;
-    if (!dateVal) return "";
-    return dateVal.split("T")[0];
+  const getKey = (
+    row: RaisedBedRow | AquaponicsRow
+  ): string => {
+    const timestamp = isSummary
+      ? row.summary_date
+      : row.created_at;
+
+    if (!timestamp) return "";
+
+    if (isSummary) {
+      return timestamp.includes("T")
+        ? timestamp
+        : `${timestamp}T00:00:00+07:00`;
+    }
+
+    return createBucketKey(timestamp, interval);
   };
 
   raisedRows.forEach((row) => {
-    const d = getDateKey(row);
-    if (!d) return;
-    if (!dates[d]) dates[d] = { raised: [], aqua: [] };
-    dates[d].raised.push(row);
+    const key = getKey(row);
+
+    if (!key) return;
+
+    if (!groups[key]) {
+      groups[key] = {
+        raised: [],
+        aqua: [],
+      };
+    }
+
+    groups[key].raised.push(row);
   });
 
   aquaRows.forEach((row) => {
-    const d = getDateKey(row);
-    if (!d) return;
-    if (!dates[d]) dates[d] = { raised: [], aqua: [] };
-    dates[d].aqua.push(row);
-  });
+    const key = getKey(row);
 
-  const historyItems: HistoryItem[] = [];
+    if (!key) return;
 
-  const formatDateLabel = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return dateStr;
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-    return `${date.getDate()} ${monthNames[date.getMonth()]}`;
-  };
-
-  const sortedDates = Object.keys(dates).sort();
-
-  sortedDates.forEach((dateStr) => {
-    const rGroup = dates[dateStr].raised;
-    const aGroup = dates[dateStr].aqua;
-
-    let temp = 0, humidity = 0, light = 0, rain = 0;
-    let soil1Count = 0, soil1Sum = 0;
-    let soil2Count = 0, soil2Sum = 0;
-
-    if (isSummary) {
-      rGroup.forEach((r) => {
-        temp += r.avg_air_temperature || 0;
-        humidity += r.avg_air_humidity || 0;
-        light += r.avg_light_intensity || 0;
-        rain += r.total_rainfall || 0;
-        if (r.bed_id === "Bed-1") {
-          soil1Sum += r.avg_soil_moisture || 0;
-          soil1Count++;
-        } else if (r.bed_id === "Bed-2") {
-          soil2Sum += r.avg_soil_moisture || 0;
-          soil2Count++;
-        }
-      });
-      const count = rGroup.length || 1;
-      temp = temp / count;
-      humidity = humidity / count;
-      light = light / count;
-      rain = rain / count;
-    } else {
-      rGroup.forEach((r) => {
-        temp += r.air_temperature || 0;
-        humidity += r.air_humidity || 0;
-        light += r.light_intensity || 0;
-        rain += r.rainfall || 0;
-        if (r.bed_id === "Bed-1") {
-          soil1Sum += r.soil_moisture || 0;
-          soil1Count++;
-        } else if (r.bed_id === "Bed-2") {
-          soil2Sum += r.soil_moisture || 0;
-          soil2Count++;
-        }
-      });
-      const count = rGroup.length || 1;
-      temp = temp / count;
-      humidity = humidity / count;
-      light = light / count;
-      rain = rain / count;
+    if (!groups[key]) {
+      groups[key] = {
+        raised: [],
+        aqua: [],
+      };
     }
 
-    const finalSoil1 = soil1Count > 0 ? soil1Sum / soil1Count : 0;
-    const finalSoil2 = soil2Count > 0 ? soil2Sum / soil2Count : 0;
-
-    let ph = 0, turbidity = 0, waterTemp = 0, waterLevel = 0, feedLevel = 0;
-
-    aGroup.forEach((a) => {
-      if (isSummary) {
-        ph += a.avg_water_ph || 0;
-        turbidity += a.avg_turbidity || 0;
-        waterTemp += a.avg_water_temperature || 0;
-        waterLevel += a.avg_water_level || 0;
-        feedLevel += a.avg_feed_storage || 0;
-      } else {
-        ph += a.water_ph || 0;
-        turbidity += a.turbidity || 0;
-        waterTemp += a.water_temperature || 0;
-        waterLevel += a.water_level || 0;
-        feedLevel += a.feed_storage || 0;
-      }
-    });
-
-    const aCount = aGroup.length || 1;
-    ph = ph / aCount;
-    turbidity = turbidity / aCount;
-    waterTemp = waterTemp / aCount;
-    waterLevel = waterLevel / aCount;
-    feedLevel = feedLevel / aCount;
-
-    historyItems.push({
-      date: dateStr,
-      label: formatDateLabel(dateStr),
-      temp: Number(temp.toFixed(1)),
-      humidity: Math.round(humidity),
-      soil1: Math.round(finalSoil1),
-      soil2: Math.round(finalSoil2),
-      light: Math.round(light),
-      rain: Math.round(rain),
-      ph: Number(ph.toFixed(1)),
-      waterTemp: Number(waterTemp.toFixed(1)),
-      turbidity: Math.round(turbidity),
-      waterLevel: Math.round(waterLevel),
-      feedLevel: Math.round(feedLevel),
-      raised: Math.round((finalSoil1 + finalSoil2) / 2),
-      aqua: Math.round(waterLevel),
-    });
+    groups[key].aqua.push(row);
   });
 
-  return historyItems;
+  return Object.keys(groups)
+    .sort(
+      (first, second) =>
+        new Date(first).getTime() -
+        new Date(second).getTime()
+    )
+    .map((key) => {
+      const raisedGroup = groups[key].raised;
+      const aquaGroup = groups[key].aqua;
+
+      const temperatures = collectNumbers(
+        raisedGroup.map((row) =>
+          isSummary
+            ? row.avg_air_temperature
+            : row.air_temperature
+        )
+      );
+
+      const humidities = collectNumbers(
+        raisedGroup.map((row) =>
+          isSummary
+            ? row.avg_air_humidity
+            : row.air_humidity
+        )
+      );
+
+      const lights = collectNumbers(
+        raisedGroup.map((row) =>
+          isSummary
+            ? row.avg_light_intensity
+            : row.light_intensity
+        )
+      );
+
+      const rainfalls = collectNumbers(
+        raisedGroup.map((row) =>
+          isSummary
+            ? row.total_rainfall
+            : row.rainfall
+        )
+      );
+
+      const soil1Values = collectNumbers(
+        raisedGroup
+          .filter((row) => row.bed_id === "Bed-1")
+          .map((row) =>
+            isSummary
+              ? row.avg_soil_moisture
+              : row.soil_moisture
+          )
+      );
+
+      const soil2Values = collectNumbers(
+        raisedGroup
+          .filter((row) => row.bed_id === "Bed-2")
+          .map((row) =>
+            isSummary
+              ? row.avg_soil_moisture
+              : row.soil_moisture
+          )
+      );
+
+      const phValues = collectNumbers(
+        aquaGroup.map((row) =>
+          isSummary
+            ? row.avg_water_ph
+            : row.water_ph
+        )
+      );
+
+      const turbidityValues = collectNumbers(
+        aquaGroup.map((row) =>
+          isSummary
+            ? row.avg_turbidity
+            : row.turbidity
+        )
+      );
+
+      const waterTemperatureValues =
+        collectNumbers(
+          aquaGroup.map((row) =>
+            isSummary
+              ? row.avg_water_temperature
+              : row.water_temperature
+          )
+        );
+
+      const waterLevelValues = collectNumbers(
+        aquaGroup.map((row) =>
+          isSummary
+            ? row.avg_water_level
+            : row.water_level
+        )
+      );
+
+      const feedLevelValues = collectNumbers(
+        aquaGroup.map((row) =>
+          isSummary
+            ? row.avg_feed_storage
+            : row.feed_storage
+        )
+      );
+
+      const temp = average(temperatures);
+      const humidity = average(humidities);
+      const soil1 = average(soil1Values);
+      const soil2 = average(soil2Values);
+      const light = average(lights);
+      const rain = average(rainfalls);
+
+      const ph = average(phValues);
+      const turbidity = average(turbidityValues);
+      const waterTemp = average(
+        waterTemperatureValues
+      );
+      const waterLevel = average(waterLevelValues);
+      const feedLevel = average(feedLevelValues);
+
+      return {
+        date: key,
+        label: formatHistoryLabel(key, interval),
+
+        temp: Number(temp.toFixed(1)),
+        humidity: Math.round(humidity),
+        soil1: Math.round(soil1),
+        soil2: Math.round(soil2),
+        light: Math.round(light),
+        rain: Math.round(rain),
+
+        ph: Number(ph.toFixed(2)),
+        waterTemp: Number(waterTemp.toFixed(1)),
+        turbidity: Number(turbidity.toFixed(1)),
+        waterLevel: Math.round(waterLevel),
+        feedLevel: Math.round(feedLevel),
+
+        raised:
+          soil1Values.length > 0 ||
+            soil2Values.length > 0
+            ? calculateRaisedHealth(
+              temp,
+              humidity,
+              soil1,
+              soil2
+            )
+            : 0,
+
+        aqua:
+          aquaGroup.length > 0
+            ? calculateAquaponicsHealth(
+              ph,
+              waterTemp,
+              turbidity,
+              waterLevel,
+              feedLevel
+            )
+            : 0,
+      };
+    });
+}
+
+async function fetchPagedRows<T>(
+  table:
+    | "raised_bed_sensors"
+    | "aquaponics_sensors",
+  startTimestamp: string,
+  endTimestamp: string
+): Promise<T[]> {
+  const pageSize = 1000;
+  let from = 0;
+  const result: T[] = [];
+
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("*")
+      .gte("created_at", startTimestamp)
+      .lte("created_at", endTimestamp)
+      .order("created_at", {
+        ascending: true,
+      })
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    const currentRows = (data ?? []) as T[];
+
+    result.push(...currentRows);
+
+    if (currentRows.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
+  }
+
+  return result;
+}
+
+function getDefaultDateRange(): DateRange {
+  const end = new Date();
+  const start = new Date();
+
+  start.setDate(end.getDate() - 6);
+
+  const format = (date: Date) => {
+    const year = date.getFullYear();
+
+    const month = String(
+      date.getMonth() + 1
+    ).padStart(2, "0");
+
+    const day = String(
+      date.getDate()
+    ).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+
+  return {
+    start: format(start),
+    end: format(end),
+  };
 }
 
 export default function Home() {
@@ -197,14 +639,21 @@ export default function Home() {
   const [dark, setDark] = useState(true);
   const [showAlert, setShowAlert] = useState(false);
 
-  const [dateRange, setDateRange] = useState<DateRange>({
-    start: "2026-07-01",
-    end: "2026-07-10",
-  });
+  const [dateRange, setDateRange] =
+    useState<DateRange>(getDefaultDateRange);
+
+  const [historyInterval, setHistoryInterval] =
+    useState<HistoryInterval>("30m");
 
   const [raised, setRaised] = useState(initialRaised);
   const [aqua, setAqua] = useState(initialAqua);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [activityLogs, setActivityLogs] =
+    useState<ActivityLogRow[]>([]);
+  const [
+    manualControlLogs,
+    setManualControlLogs,
+  ] = useState<ManualControlLogRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   const alerts = useAlert(raised, aqua);
@@ -217,12 +666,319 @@ export default function Home() {
     ) {
       navigator.serviceWorker
         .register("/sw.js")
-        .then(() => console.log("✅ Service Worker Registered"))
-        .catch((err) =>
-          console.error("❌ Service Worker Error:", err)
-        );
+        .then(() => {
+          console.log("✅ Service Worker Registered");
+        })
+        .catch((error) => {
+          console.error(
+            "❌ Service Worker Error:",
+            error
+          );
+        });
     }
   }, []);
+
+  // Fetch and aggregate history data
+  // Fetch and aggregate history data
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchHistoryData() {
+      if (!dateRange.start || !dateRange.end) {
+        return;
+      }
+
+      setLoadingHistory(true);
+
+      try {
+        let raisedRows: RaisedBedRow[] = [];
+        let aquaRows: AquaponicsRow[] = [];
+        let activityRows: ActivityLogRow[] = [];
+        let manualRows: ManualControlLogRow[] = [];
+
+        const useSummary =
+          historyInterval === "1d";
+
+        if (useSummary) {
+          const [
+            raisedSummaryResponse,
+            aquaSummaryResponse,
+          ] = await Promise.all([
+            supabase
+              .from("daily_raised_bed_summary")
+              .select("*")
+              .gte(
+                "summary_date",
+                dateRange.start
+              )
+              .lte(
+                "summary_date",
+                dateRange.end
+              )
+              .order("summary_date", {
+                ascending: true,
+              }),
+
+            supabase
+              .from("daily_aquaponics_summary")
+              .select("*")
+              .gte(
+                "summary_date",
+                dateRange.start
+              )
+              .lte(
+                "summary_date",
+                dateRange.end
+              )
+              .order("summary_date", {
+                ascending: true,
+              }),
+          ]);
+
+          if (raisedSummaryResponse.error) {
+            throw raisedSummaryResponse.error;
+          }
+
+          if (aquaSummaryResponse.error) {
+            throw aquaSummaryResponse.error;
+          }
+
+          raisedRows =
+            (raisedSummaryResponse.data ??
+              []) as RaisedBedRow[];
+
+          aquaRows =
+            (aquaSummaryResponse.data ??
+              []) as AquaponicsRow[];
+        } else {
+          const startTimestamp =
+            `${dateRange.start}T00:00:00+07:00`;
+
+          const endTimestamp =
+            `${dateRange.end}T23:59:59.999+07:00`;
+
+          const [raisedRaw, aquaRaw] =
+            await Promise.all([
+              fetchPagedRows<RaisedBedRow>(
+                "raised_bed_sensors",
+                startTimestamp,
+                endTimestamp
+              ),
+
+              fetchPagedRows<AquaponicsRow>(
+                "aquaponics_sensors",
+                startTimestamp,
+                endTimestamp
+              ),
+            ]);
+
+          raisedRows = raisedRaw;
+          aquaRows = aquaRaw;
+        }
+
+        const activityStart =
+          `${dateRange.start}T00:00:00+07:00`;
+
+        const activityEnd =
+          `${dateRange.end}T23:59:59.999+07:00`;
+
+        try {
+          const {
+            data: activityData,
+            error: activityError,
+          } = await supabase
+            .from("activity_log")
+            .select("*")
+            .gte("activity_at", activityStart)
+            .lte("activity_at", activityEnd)
+            .order("activity_at", {
+              ascending: true,
+            });
+
+          if (activityError) {
+            // Activity Log bersifat opsional.
+            // Dashboard tetap berjalan jika tabel belum dibuat.
+            console.warn(
+              "Activity Log belum tersedia:",
+              activityError.message
+            );
+
+            activityRows = [];
+          } else {
+            activityRows =
+              (activityData ?? []) as ActivityLogRow[];
+          }
+        } catch (activityError) {
+          console.warn(
+            "Activity Log dilewati:",
+            activityError
+          );
+
+          activityRows = [];
+        }
+
+        const manualStart =
+          `${dateRange.start}T00:00:00+07:00`;
+
+        const manualEnd =
+          `${dateRange.end}T23:59:59.999+07:00`;
+
+        try {
+          const {
+            data: manualData,
+            error: manualError,
+          } = await supabase
+            .from("manual_control_log")
+            .select("*")
+            .gte("requested_at", manualStart)
+            .lte("requested_at", manualEnd)
+            .order("requested_at", {
+              ascending: true,
+            });
+
+          if (manualError) {
+            console.warn(
+              "Manual Control Log belum tersedia:",
+              manualError.message
+            );
+
+            manualRows = [];
+          } else {
+            manualRows =
+              (manualData ??
+                []) as ManualControlLogRow[];
+          }
+        } catch (manualError) {
+          console.warn(
+            "Manual Control Log dilewati:",
+            manualError
+          );
+
+          manualRows = [];
+        }
+
+        console.log(
+          "Jumlah activity log:",
+          activityRows.length,
+          activityRows
+        );
+
+        const aggregated = aggregateData(
+          raisedRows,
+          aquaRows,
+          historyInterval,
+          useSummary
+        );
+
+        if (activityRows.length === 0) {
+          activityRows = aggregated.flatMap((item) => {
+            const generatedActivities: ActivityLogRow[] = [];
+
+            const activityTime = item.date;
+
+            if (item.temp > 0 || item.soil1 > 0 || item.soil2 > 0) {
+              generatedActivities.push({
+                activity_at: activityTime,
+                activity_type: "sensor_data_received",
+                system_type: "raised_bed",
+                actor_name: "ESP32 Raised Bed",
+                actor_type: "device",
+                title: "Data Raised Bed diterima",
+                description:
+                  `Data sensor diterima: suhu ${item.temp} °C, ` +
+                  `kelembapan ${item.humidity}%, ` +
+                  `soil 1 ${item.soil1}%, soil 2 ${item.soil2}%.`,
+                status: "success",
+              });
+            }
+
+            if (
+              item.ph > 0 ||
+              item.waterTemp > 0 ||
+              item.waterLevel > 0
+            ) {
+              generatedActivities.push({
+                activity_at: activityTime,
+                activity_type: "sensor_data_received",
+                system_type: "aquaponik",
+                actor_name: "ESP32 Aquaponik",
+                actor_type: "device",
+                title: "Data Aquaponik diterima",
+                description:
+                  `Data sensor diterima: pH ${item.ph}, ` +
+                  `suhu air ${item.waterTemp} °C, ` +
+                  `turbidity ${item.turbidity} NTU, ` +
+                  `water level ${item.waterLevel}%.`,
+                status: "success",
+              });
+            }
+
+            if (item.raised < 70 && item.raised > 0) {
+              generatedActivities.push({
+                activity_at: activityTime,
+                activity_type: "recommendation_generated",
+                system_type: "raised_bed",
+                actor_name: "Smart Green Farm",
+                actor_type: "system",
+                title: "Rekomendasi Raised Bed dibuat",
+                description:
+                  `Health score Raised Bed berada pada ${item.raised}%. ` +
+                  "Sistem menyarankan pemeriksaan kondisi tanaman.",
+                status: "warning",
+              });
+            }
+
+            if (item.aqua < 70 && item.aqua > 0) {
+              generatedActivities.push({
+                activity_at: activityTime,
+                activity_type: "recommendation_generated",
+                system_type: "aquaponik",
+                actor_name: "Smart Green Farm",
+                actor_type: "system",
+                title: "Rekomendasi Aquaponik dibuat",
+                description:
+                  `Health score Aquaponik berada pada ${item.aqua}%. ` +
+                  "Sistem menyarankan pemeriksaan kualitas air.",
+                status: "warning",
+              });
+            }
+
+            return generatedActivities;
+          });
+        }
+
+        if (!cancelled) {
+          setHistory(aggregated);
+          setActivityLogs(activityRows);
+          setManualControlLogs(manualRows);
+        }
+      } catch (error) {
+        console.error(
+          "Gagal mengambil history:",
+          error
+        );
+
+        if (!cancelled) {
+          setHistory([]);
+          setActivityLogs([]);
+          setManualControlLogs([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingHistory(false);
+        }
+      }
+    }
+
+    fetchHistoryData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    dateRange,
+    historyInterval,
+  ]);
 
   // Initialize and subscribe to real-time sensor updates
   useEffect(() => {
@@ -325,92 +1081,49 @@ export default function Home() {
       .channel("realtime-aqua-sensors")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "aquaponics_sensors" },
+        {
+          event: "*",
+          schema: "public",
+          table: "aquaponics_sensors",
+        },
         (payload) => {
-          const latest = payload.new as AquaponicsRow;
+          const latest =
+            payload.new as AquaponicsRow;
+
           if (!latest) return;
 
-          setAqua((p) => ({
-            ...p,
-            ph: latest.water_ph ?? p.ph,
-            turbidity: latest.turbidity ?? p.turbidity,
-            waterTemp: latest.water_temperature ?? p.waterTemp,
-            waterLevel: latest.water_level ?? p.waterLevel,
-            feedLevel: latest.feed_storage ?? p.feedLevel,
+          setAqua((previous) => ({
+            ...previous,
+            ph:
+              latest.water_ph ??
+              previous.ph,
+            turbidity:
+              latest.turbidity ??
+              previous.turbidity,
+            waterTemp:
+              latest.water_temperature ??
+              previous.waterTemp,
+            waterLevel:
+              latest.water_level ??
+              previous.waterLevel,
+            feedLevel:
+              latest.feed_storage ??
+              previous.feedLevel,
           }));
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(raisedChannel);
-      supabase.removeChannel(aquaChannel);
+      supabase.removeChannel(
+        raisedChannel
+      );
+
+      supabase.removeChannel(
+        aquaChannel
+      );
     };
   }, []);
-
-  // Fetch and aggregate history data
-  useEffect(() => {
-    async function fetchHistoryData() {
-      setLoadingHistory(true);
-      try {
-        const startDate = new Date(dateRange.start);
-        const endDate = new Date(dateRange.end);
-        const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        const useSummary = diffDays > 7;
-
-        let raisedRows: RaisedBedRow[] = [];
-        let aquaRows: AquaponicsRow[] = [];
-
-        if (useSummary) {
-          // Fetch from daily summaries
-          const { data: raisedSummary } = await supabase
-            .from("daily_raised_bed_summary")
-            .select("*")
-            .gte("summary_date", dateRange.start)
-            .lte("summary_date", dateRange.end)
-            .order("summary_date", { ascending: true });
-
-          const { data: aquaSummary } = await supabase
-            .from("daily_aquaponics_summary")
-            .select("*")
-            .gte("summary_date", dateRange.start)
-            .lte("summary_date", dateRange.end)
-            .order("summary_date", { ascending: true });
-
-          if (raisedSummary) raisedRows = raisedSummary as RaisedBedRow[];
-          if (aquaSummary) aquaRows = aquaSummary as AquaponicsRow[];
-        } else {
-          // Fetch raw logs
-          const { data: raisedRaw } = await supabase
-            .from("raised_bed_sensors")
-            .select("*")
-            .gte("created_at", `${dateRange.start}T00:00:00.000Z`)
-            .lte("created_at", `${dateRange.end}T23:59:59.999Z`)
-            .order("created_at", { ascending: true });
-
-          const { data: aquaRaw } = await supabase
-            .from("aquaponics_sensors")
-            .select("*")
-            .gte("created_at", `${dateRange.start}T00:00:00.000Z`)
-            .lte("created_at", `${dateRange.end}T23:59:59.999Z`)
-            .order("created_at", { ascending: true });
-
-          if (raisedRaw) raisedRows = raisedRaw as RaisedBedRow[];
-          if (aquaRaw) aquaRows = aquaRaw as AquaponicsRow[];
-        }
-
-        const aggregated = aggregateData(raisedRows, aquaRows, useSummary);
-        setHistory(aggregated);
-      } catch (err) {
-        console.error("Error fetching history:", err);
-      } finally {
-        setLoadingHistory(false);
-      }
-    }
-
-    fetchHistoryData();
-  }, [dateRange]);
 
   return (
     <main
@@ -486,8 +1199,13 @@ export default function Home() {
                 <HistoryPage
                   dark={dark}
                   data={history}
+                  alerts={alerts}
+                  activityLogs={activityLogs}
+                  manualControlLogs={manualControlLogs}
                   dateRange={dateRange}
                   setDateRange={setDateRange}
+                  interval={historyInterval}
+                  setInterval={setHistoryInterval}
                 />
               </div>
             )}
